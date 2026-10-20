@@ -16,7 +16,7 @@ Back, forward and the gesture ("app switch") button on a Logitech MX Master 4, w
 | Gesture button, hold + move down | App Exposé |
 | Gesture button, hold + move left / right | Move one Space left / right |
 
-Everything else (wheel, SmartShift, thumb wheel, DPI) keeps the mouse's built-in behavior. The haptic Sense Panel is left alone unless you map it.
+Everything else (wheel, SmartShift, thumb wheel, DPI) keeps the mouse's built-in behavior. The haptic Sense Panel is left alone unless you map it. For example, tap for Spotlight and hold for Siri (see below).
 
 ## Install
 
@@ -58,13 +58,15 @@ Optional. Create `~/.config/mx4d/config.json` (every key is optional) and run `m
     "left": "spaceLeft",
     "right": "spaceRight"
   },
-  "sensePanel": "none",
+  "sensePanel": { "tap": "cmd+space", "hold": "siri" },
   "gestureThreshold": 100,
   "verbose": false
 }
 ```
 
-Actions: `none`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`, `spaceLeft`, `spaceRight`, `back`, `forward`, or a shortcut like `cmd+tab`, `ctrl+up`, `cmd+shift+4`.
+Actions: `none`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`, `spaceLeft`, `spaceRight`, `back`, `forward`, `siri`, a shortcut like `cmd+tab`, `ctrl+up`, `cmd+shift+4`, or `open:` followed by an app name (`open:Notes`), bundle ID (`open:com.apple.Safari`), path, or URL (`open:shortcuts://run-shortcut?name=Timer`).
+
+`sensePanel` takes either one action (fires on press) or `{ "tap": ..., "hold": ... }`. With a hold action, a tap fires on release and holding for 0.4 s fires the hold action instead. The example above maps it like ⌘Space on a Mac keyboard: tap for Spotlight, hold for Siri.
 
 Set every direction to `none` to make the gesture button act on press instead of release (the pointer then keeps moving while it's held). `gestureThreshold` is how far (in sensor counts) you have to move while holding the button before it counts as a swipe; a normal click moves 0–10.
 

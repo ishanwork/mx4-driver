@@ -12,6 +12,8 @@ enum Action: Equatable, CustomStringConvertible {
     case spaceRight
     case back
     case forward
+    case siri
+    case open(String)
     case keys(CGKeyCode, CGEventFlags)
 
     init?(_ name: String) {
@@ -25,6 +27,8 @@ enum Action: Equatable, CustomStringConvertible {
         case "spaceRight": self = .spaceRight
         case "back": self = .back
         case "forward": self = .forward
+        case "siri": self = .siri
+        case _ where name.hasPrefix("open:") && name.count > 5: self = .open(String(name.dropFirst(5)))
         default:
             guard let (key, flags) = Keys.parse(name) else { return nil }
             self = .keys(key, flags)
@@ -42,6 +46,8 @@ enum Action: Equatable, CustomStringConvertible {
         case .spaceRight: return "spaceRight"
         case .back: return "back"
         case .forward: return "forward"
+        case .siri: return "siri"
+        case let .open(target): return "open:\(target)"
         case let .keys(key, flags): return "keys(\(key), 0x\(String(flags.rawValue, radix: 16)))"
         }
     }
@@ -58,6 +64,8 @@ enum Action: Equatable, CustomStringConvertible {
         case .spaceRight: Synth.key(Keys.rightArrow, flags: [.maskControl, .maskSecondaryFn])
         case .back: Synth.navigationSwipe(.left)
         case .forward: Synth.navigationSwipe(.right)
+        case .siri: Launcher.open("com.apple.siri.launcher")
+        case let .open(target): Launcher.open(target)
         case let .keys(key, flags): Synth.key(key, flags: flags)
         }
     }
@@ -78,6 +86,35 @@ enum Dock {
             log("CoreDockSendNotification unavailable; cannot send \(notification)")
         }
     }
+}
+
+/// Opens apps (by name or bundle ID), files and URLs via /usr/bin/open.
+enum Launcher {
+    static func open(_ target: String) {
+        let arguments: [String]
+        if target.contains("://") || target.hasPrefix("/") || target.hasPrefix("~") {
+            arguments = [(target as NSString).expandingTildeInPath]
+        } else if target.contains("."), !target.contains(" ") {
+            arguments = ["-b", target] // bundle ID, e.g. com.apple.Safari
+        } else {
+            arguments = ["-a", target] // app name, e.g. Safari
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = arguments
+        // Keep the Process alive until it exits so it gets reaped.
+        process.terminationHandler = { finished in
+            DispatchQueue.main.async { running.removeAll { $0 === finished } }
+        }
+        do {
+            try process.run()
+            running.append(process)
+        } catch {
+            log("Could not open \(target): \(error.localizedDescription)")
+        }
+    }
+
+    private static var running: [Process] = []
 }
 
 enum Synth {

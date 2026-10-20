@@ -9,6 +9,7 @@ enum CID {
 
 /// Owns the HID++ connections and turns diverted button presses into actions.
 final class Driver {
+    private static let holdDelay: TimeInterval = 0.4
     private let config: Config
     private let manager: IOHIDManager
     private var transports: [IOHIDDevice: HIDPPTransport] = [:]
@@ -33,6 +34,8 @@ final class Driver {
         var dx = 0
         var dy = 0
         var gestureFired = false
+        var panelPresses = 0 // identifies the current Sense Panel press for the hold timer
+        var panelHoldFired = false
 
         init(device: HIDPPDevice, name: String, reprogIndex: UInt8, wirelessStatusIndex: UInt8?, diverted: [UInt16]) {
             self.device = device
@@ -121,7 +124,7 @@ final class Driver {
             let rawXY = config.hasDirectionalGestures && gesture.supportsRawXY
             if device.divert(CID.gestureButton, rawXY: rawXY) { diverted.append(CID.gestureButton) }
         }
-        if config.sensePanel != .none, let panel = controls[CID.sensePanel], panel.isDivertable {
+        if config.sensePanel != .none || config.sensePanelHold != .none, let panel = controls[CID.sensePanel], panel.isDivertable {
             if device.divert(CID.sensePanel) { diverted.append(CID.sensePanel) }
         }
         guard !diverted.isEmpty else { return }
@@ -206,7 +209,22 @@ final class Driver {
             run(config.gestureClick, "gesture click")
         }
         if down.contains(CID.sensePanel) {
-            run(config.sensePanel, "sense panel")
+            if config.sensePanelHold == .none {
+                run(config.sensePanel, "sense panel")
+            } else {
+                // Tap fires on release; holding past the delay fires the hold action instead.
+                mouse.panelPresses += 1
+                mouse.panelHoldFired = false
+                let press = mouse.panelPresses
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdDelay) { [weak self, weak mouse] in
+                    guard let self, let mouse, mouse.panelPresses == press, mouse.pressed.contains(CID.sensePanel) else { return }
+                    mouse.panelHoldFired = true
+                    self.run(self.config.sensePanelHold, "sense panel hold")
+                }
+            }
+        }
+        if up.contains(CID.sensePanel) && config.sensePanelHold != .none && !mouse.panelHoldFired {
+            run(config.sensePanel, "sense panel tap")
         }
     }
 

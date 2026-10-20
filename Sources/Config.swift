@@ -10,6 +10,7 @@ struct Config {
     var gestureLeft: Action = .spaceLeft
     var gestureRight: Action = .spaceRight
     var sensePanel: Action = .none
+    var sensePanelHold: Action = .none
     /// Pointer travel (device counts) while holding the gesture button before it counts as a swipe.
     var gestureThreshold = 100
     var verbose = false
@@ -47,7 +48,13 @@ struct Config {
             config.gestureLeft = action(gesture["left"], config.gestureLeft)
             config.gestureRight = action(gesture["right"], config.gestureRight)
         }
-        config.sensePanel = action(json["sensePanel"], config.sensePanel)
+        // "sensePanel": "action" (tap only) or {"tap": "action", "hold": "action"}
+        if let panel = json["sensePanel"] as? [String: Any] {
+            config.sensePanel = action(panel["tap"], config.sensePanel)
+            config.sensePanelHold = action(panel["hold"], config.sensePanelHold)
+        } else {
+            config.sensePanel = action(json["sensePanel"], config.sensePanel)
+        }
         if let value = json["gestureThreshold"] as? Int { config.gestureThreshold = value }
         if let value = json["verbose"] as? Bool { config.verbose = value }
         return config
