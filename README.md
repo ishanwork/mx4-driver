@@ -81,7 +81,7 @@ To move Space switching from the gesture button to the Sense Panel:
 
 `hapticFeedback` makes the MX Master 4 play a haptic waveform each time a swipe fires: `sharpStateChange`, `dampStateChange`, `sharpCollision`, `dampCollision`, `subtleCollision`, `happyAlert`, `angryAlert`, `completed`, `square`, `wave`, `firework`, `mad`, `knock`, `jingle`, `ringing` or `whisperCollision`. Run `build/MX4Driver.app/Contents/MacOS/mx4d --haptic knock` to feel a waveform before you choose it. The strength comes from the mouse's own haptic level setting.
 
-Set every direction and the hold to `none` to make the gesture button act on press instead of release (the pointer then keeps moving while it's held). `gestureThreshold` is how far (in sensor counts) you have to move while holding the button before it counts as a swipe; a normal click moves 0–10.
+Set every direction and the hold to `none` to make the gesture button act on press instead of release (the pointer then keeps moving while it's held). Set every gesture button action to `none` to leave the button to macOS as mouse button 6, so other apps can bind it. `gestureThreshold` is how far (in sensor counts) you have to move while holding the button before it counts as a swipe; a normal click moves 0–10.
 
 ## How it works
 
