@@ -16,7 +16,7 @@ Back, forward and the gesture ("app switch") button on a Logitech MX Master 4, w
 | Gesture button, hold + move down | App Exposé |
 | Gesture button, hold + move left / right | Move one Space left / right |
 
-Everything else (wheel, SmartShift, thumb wheel, DPI) keeps the mouse's built-in behavior. The haptic Sense Panel is left alone unless you map it. For example, tap for Spotlight and hold for Siri (see below).
+Everything else (wheel, SmartShift, thumb wheel, DPI) keeps the mouse's built-in behavior. The haptic Sense Panel is left alone unless you map it. For example, tap for Spotlight, hold for Siri, or hold + move to switch Spaces (see below).
 
 ## Install
 
@@ -42,7 +42,7 @@ make logs
 make probe
 ```
 
-`make probe` lists connected Logitech devices, their HID++ features and buttons.
+`make probe` lists connected Logitech devices, their HID++ features, haptic level and buttons.
 
 ## Configure
 
@@ -60,20 +60,34 @@ Optional. Create `~/.config/mx4d/config.json` (every key is optional) and run `m
   },
   "sensePanel": { "tap": "cmd+space", "hold": "siri" },
   "gestureThreshold": 100,
+  "hapticFeedback": "none",
   "verbose": false
 }
 ```
 
 Actions: `none`, `missionControl`, `appExpose`, `showDesktop`, `launchpad`, `spaceLeft`, `spaceRight`, `back`, `forward`, `siri`, a shortcut like `cmd+tab`, `ctrl+up`, `cmd+shift+4`, or `open:` followed by an app name (`open:Notes`), bundle ID (`open:com.apple.Safari`), path, or URL (`open:shortcuts://run-shortcut?name=Timer`).
 
-`sensePanel` takes either one action (fires on press) or `{ "tap": ..., "hold": ... }`. With a hold action, a tap fires on release and holding for 0.4 s fires the hold action instead. The example above maps it like ⌘Space on a Mac keyboard: tap for Spotlight, hold for Siri.
+`gestureButton` and `sensePanel` take the same keys: `tap` (or `click`), `hold`, `up`, `down`, `left` and `right`. Either button can also take one action as a plain string, which fires on press. With a hold action, a tap fires on release and holding for 0.4 s fires the hold action instead. With direction actions, holding the button and moving the mouse fires the direction instead of the tap. The pointer does not move while you hold the button. The example above maps the Sense Panel like ⌘Space on a Mac keyboard: tap for Spotlight, hold for Siri.
 
-Set every direction to `none` to make the gesture button act on press instead of release (the pointer then keeps moving while it's held). `gestureThreshold` is how far (in sensor counts) you have to move while holding the button before it counts as a swipe; a normal click moves 0–10.
+To move Space switching from the gesture button to the Sense Panel:
+
+```json
+{
+  "gestureButton": { "left": "none", "right": "none" },
+  "sensePanel": { "left": "spaceLeft", "right": "spaceRight" },
+  "hapticFeedback": "sharpStateChange"
+}
+```
+
+`hapticFeedback` makes the MX Master 4 play a haptic waveform each time a swipe fires: `sharpStateChange`, `dampStateChange`, `sharpCollision`, `dampCollision`, `subtleCollision`, `happyAlert`, `angryAlert`, `completed`, `square`, `wave`, `firework`, `mad`, `knock`, `jingle`, `ringing` or `whisperCollision`. Run `build/MX4Driver.app/Contents/MacOS/mx4d --haptic knock` to feel a waveform before you choose it. The strength comes from the mouse's own haptic level setting.
+
+Set every direction and the hold to `none` to make the gesture button act on press instead of release (the pointer then keeps moving while it's held). `gestureThreshold` is how far (in sensor counts) you have to move while holding the button before it counts as a swipe; a normal click moves 0–10.
 
 ## How it works
 
 - **Gesture button / Sense Panel**: diverted with HID++ feature `0x1B04` (REPROG_CONTROLS_V4), with raw XY diversion so movement while held is reported to us instead of moving the pointer. The diversion is temporary (lives in the mouse's RAM), so it's re-applied when the receiver reports the mouse reconnecting, when the mouse asks for reconfiguration (`0x1D4B`), and, as a last resort, when the button shows up as a plain mouse-button-6 click. When the daemon stops, it hands the buttons back to the firmware.
 - **Back / forward**: a `CGEventTap` on other-mouse-button events. In apps that don't understand buttons 4/5, the click is replaced with a navigation swipe gesture event.
+- **Haptic feedback**: HID++ feature `0x19B0` (HAPTIC), function 4 (play waveform). The waveform IDs come from Solaar.
 - **Mission Control / Exposé**: the Dock's `CoreDockSendNotification`. Space switching posts the system's ⌃← / ⌃→ shortcuts.
 
 ## Credits

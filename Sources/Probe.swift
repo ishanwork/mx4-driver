@@ -38,6 +38,9 @@ func runProbe() -> Int32 {
             for f in device.features() {
                 print(String(format: "    feature[%2d] 0x%04X v%d", f.index, f.id, f.version))
             }
+            if let haptics = device.hapticInfo() {
+                print("    haptics: level \(haptics.level), waveforms " + haptics.waveforms.map(\.name).joined(separator: ", "))
+            }
             for c in device.controls() {
                 let reporting = device.reporting(c.cid)
                 print(String(format: "    control cid=0x%04X tid=0x%04X flags=0x%02X extra=0x%02X group=%d gmask=0x%02X reporting=0x%02X remap=0x%04X%@%@",
@@ -48,4 +51,34 @@ func runProbe() -> Int32 {
         }
     }
     return 0
+}
+
+/// `mx4d --haptic <waveform>`: play a haptic waveform on each connected mouse that has a haptic motor.
+func runHaptic(_ name: String?) -> Int32 {
+    guard let name, let waveform = HapticWaveform(name: name) else {
+        print("usage: mx4d --haptic <waveform>\nwaveforms: " + HapticWaveform.allCases.map(\.name).joined(separator: ", "))
+        return 2
+    }
+    let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    IOHIDManagerSetDeviceMatchingMultiple(manager, hidppMatching() as CFArray)
+    IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+    IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+    CFRunLoopRunInMode(.defaultMode, 0.3, false)
+    let devices = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>) ?? []
+    var played = false
+    for transport in devices.map({ HIDPPTransport(device: $0) }) {
+        for index: UInt8 in transport.isReceiver ? Array(1...6) : [HIDPP.directIndex] {
+            let device = HIDPPDevice(transport: transport, index: index)
+            guard device.ping() != nil, device.featureIndex(HIDPP.featureHaptics) != nil else { continue }
+            switch device.call(HIDPP.featureHaptics, function: 4, params: [waveform.rawValue]) {
+            case .success:
+                print("Played \(waveform.name) on \(device.name ?? "device \(index)")")
+                played = true
+            case let .failure(error):
+                print("\(device.name ?? "device \(index)"): \(error)")
+            }
+        }
+    }
+    if !played { print("No mouse with haptics found.") }
+    return played ? 0 : 1
 }

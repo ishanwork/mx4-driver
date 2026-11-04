@@ -5,12 +5,16 @@ let arguments = CommandLine.arguments.dropFirst()
 if arguments.contains("--probe") {
     exit(runProbe())
 }
+if let flag = arguments.firstIndex(of: "--haptic") {
+    exit(runHaptic(arguments.dropFirst(flag - arguments.startIndex + 1).first))
+}
 if arguments.contains("--help") || arguments.contains("-h") {
     print("""
-    usage: mx4d [--verbose] [--probe]
+    usage: mx4d [--verbose] [--probe] [--haptic <waveform>]
       (no flags)  run the button daemon
       --verbose   log every button event
       --probe     list connected Logitech devices, features and buttons, then exit
+      --haptic    play a haptic waveform on the mouse (MX Master 4), then exit
     config: \(Config.path.path)
     """)
     exit(0)

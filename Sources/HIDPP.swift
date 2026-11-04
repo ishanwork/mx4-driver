@@ -17,6 +17,34 @@ enum HIDPP {
     static let featureDeviceName: UInt16 = 0x0005
     static let featureWirelessStatus: UInt16 = 0x1D4B
     static let featureReprogControlsV4: UInt16 = 0x1B04
+    static let featureHaptics: UInt16 = 0x19B0 // MX Master 4 haptic motor
+}
+
+/// Built-in waveforms of HID++ feature 0x19B0 (names and IDs from Solaar).
+enum HapticWaveform: UInt8, CaseIterable {
+    case sharpStateChange = 0x00
+    case dampStateChange = 0x01
+    case sharpCollision = 0x02
+    case dampCollision = 0x03
+    case subtleCollision = 0x04
+    case happyAlert = 0x05
+    case angryAlert = 0x06
+    case completed = 0x07
+    case square = 0x08
+    case wave = 0x09
+    case firework = 0x0A
+    case mad = 0x0B
+    case knock = 0x0C
+    case jingle = 0x0D
+    case ringing = 0x0E
+    case whisperCollision = 0x1B
+
+    var name: String { String(describing: self) }
+
+    init?(name: String) {
+        guard let match = Self.allCases.first(where: { $0.name.lowercased() == name.lowercased() }) else { return nil }
+        self = match
+    }
 }
 
 final class HIDPPTransport {
@@ -219,6 +247,21 @@ final class HIDPPDevice {
             return true
         }
         return false
+    }
+
+    // MARK: HAPTIC (0x19B0)
+
+    /// Supported waveforms (getCapabilities) and the user's strength setting (getConfig: 0 = off).
+    func hapticInfo() -> (waveforms: [HapticWaveform], level: Int)? {
+        guard case let .success(caps) = call(HIDPP.featureHaptics, function: 0),
+              case let .success(cfg) = call(HIDPP.featureHaptics, function: 1) else { return nil }
+        let mask = UInt32(caps[4]) << 24 | UInt32(caps[5]) << 16 | UInt32(caps[6]) << 8 | UInt32(caps[7])
+        return (HapticWaveform.allCases.filter { mask & (1 << $0.rawValue) != 0 }, cfg[0] & 0x01 == 0 ? 0 : Int(cfg[1]))
+    }
+
+    /// Plays a waveform without waiting for the reply, so it never delays the action it accompanies.
+    func playHaptic(_ waveform: HapticWaveform, featureIndex: UInt8) {
+        transport.send([HIDPP.longReport, index, featureIndex, 0x40, waveform.rawValue])
     }
 
     @discardableResult

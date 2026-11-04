@@ -23,28 +23,42 @@ final class Driver {
         let index: UInt8
     }
 
-    /// A configured mouse and its gesture-button state.
+    /// Press state of one diverted button.
+    final class Press {
+        var dx = 0
+        var dy = 0
+        var fired = false // a hold or swipe action fired, so release does nothing
+        var skipNextMove = true
+    }
+
+    /// A configured mouse and its button state.
     final class Mouse {
         let device: HIDPPDevice
         let name: String
         let reprogIndex: UInt8
         let wirelessStatusIndex: UInt8?
+        let hapticIndex: UInt8?
         let diverted: [UInt16]
         var pressed: Set<UInt16> = []
-        var dx = 0
-        var dy = 0
-        var gestureFired = false
-        var skipNextMove = false
-        var panelPresses = 0 // identifies the current Sense Panel press for the hold timer
-        var panelHoldFired = false
+        var presses: [UInt16: Press] = [:] // diverted buttons currently held
 
-        init(device: HIDPPDevice, name: String, reprogIndex: UInt8, wirelessStatusIndex: UInt8?, diverted: [UInt16]) {
+        init(device: HIDPPDevice, name: String, reprogIndex: UInt8, wirelessStatusIndex: UInt8?,
+             hapticIndex: UInt8?, diverted: [UInt16]) {
             self.device = device
             self.name = name
             self.reprogIndex = reprogIndex
             self.wirelessStatusIndex = wirelessStatusIndex
+            self.hapticIndex = hapticIndex
             self.diverted = diverted
         }
+    }
+
+    private func actions(for cid: UInt16) -> ButtonActions {
+        cid == CID.gestureButton ? config.gestureButton : config.sensePanel
+    }
+
+    private static func label(_ cid: UInt16) -> String {
+        cid == CID.gestureButton ? "gesture" : "sense panel"
     }
 
     init(config: Config) {
@@ -121,17 +135,19 @@ final class Driver {
         let controls = Dictionary(device.controls().map { ($0.cid, $0) }, uniquingKeysWith: { a, _ in a })
         if controls[CID.gestureButton] != nil { gestureSlots[key, default: []].insert(index) }
         var diverted: [UInt16] = []
-        if let gesture = controls[CID.gestureButton], gesture.isDivertable {
-            let rawXY = config.hasDirectionalGestures && gesture.supportsRawXY
-            if device.divert(CID.gestureButton, rawXY: rawXY) { diverted.append(CID.gestureButton) }
-        }
-        if config.sensePanel != .none || config.sensePanelHold != .none, let panel = controls[CID.sensePanel], panel.isDivertable {
-            if device.divert(CID.sensePanel) { diverted.append(CID.sensePanel) }
+        // The gesture button is always diverted so we can recover its click even when unmapped.
+        for cid in [CID.gestureButton, CID.sensePanel] {
+            let mapped = actions(for: cid)
+            guard cid == CID.gestureButton || mapped.isMapped, let control = controls[cid], control.isDivertable else { continue }
+            let rawXY = mapped.hasDirections && control.supportsRawXY
+            if device.divert(cid, rawXY: rawXY) { diverted.append(cid) }
         }
         guard !diverted.isEmpty else { return }
         let name = device.name ?? "device \(index)"
         let mouse = Mouse(device: device, name: name, reprogIndex: reprogIndex,
-                          wirelessStatusIndex: device.featureIndex(HIDPP.featureWirelessStatus), diverted: diverted)
+                          wirelessStatusIndex: device.featureIndex(HIDPP.featureWirelessStatus),
+                          hapticIndex: config.hapticFeedback == nil ? nil : device.featureIndex(HIDPP.featureHaptics),
+                          diverted: diverted)
         mice[key, default: [:]][index] = mouse
         log("Configured \(name) (slot \(index)): diverted " + diverted.map { String(format: "0x%04X", $0) }.joined(separator: ", "))
     }
@@ -153,7 +169,7 @@ final class Driver {
     /// telling us (power cycle, deep sleep). Do the click action now and re-divert in the background.
     func nativeGestureButtonPressed() -> Bool {
         guard !transports.isEmpty else { return false }
-        run(config.gestureClick, "gesture click (button not diverted)")
+        run(config.gestureButton.tap, "gesture tap (button not diverted)")
         guard !recoveryPending else { return true }
         recoveryPending = true
         DispatchQueue.main.async { [self] in
@@ -199,55 +215,53 @@ final class Driver {
         let up = mouse.pressed.subtracting(pressed)
         mouse.pressed = pressed
 
-        if down.contains(CID.gestureButton) {
-            mouse.dx = 0
-            mouse.dy = 0
-            mouse.gestureFired = false
-            mouse.skipNextMove = true
-            if !config.hasDirectionalGestures { run(config.gestureClick, "gesture click") }
-        }
-        if up.contains(CID.gestureButton) && config.verbose { log("gesture released: travel dx=\(mouse.dx) dy=\(mouse.dy)") }
-        if up.contains(CID.gestureButton) && config.hasDirectionalGestures && !mouse.gestureFired {
-            run(config.gestureClick, "gesture click")
-        }
-        if down.contains(CID.sensePanel) {
-            if config.sensePanelHold == .none {
-                run(config.sensePanel, "sense panel")
-            } else {
-                // Tap fires on release; holding past the delay fires the hold action instead.
-                mouse.panelPresses += 1
-                mouse.panelHoldFired = false
-                let press = mouse.panelPresses
+        for cid in down where mouse.diverted.contains(cid) {
+            let mapped = actions(for: cid)
+            let press = Press()
+            mouse.presses[cid] = press
+            if mapped.firesOnPress {
+                run(mapped.tap, "\(Self.label(cid)) press")
+            } else if mapped.hold != .none {
+                // Holding past the delay fires the hold action instead of the tap.
                 DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdDelay) { [weak self, weak mouse] in
-                    guard let self, let mouse, mouse.panelPresses == press, mouse.pressed.contains(CID.sensePanel) else { return }
-                    mouse.panelHoldFired = true
-                    self.run(self.config.sensePanelHold, "sense panel hold")
+                    guard let self, let mouse, mouse.presses[cid] === press, !press.fired else { return }
+                    press.fired = true
+                    self.run(mapped.hold, "\(Self.label(cid)) hold")
                 }
             }
         }
-        if up.contains(CID.sensePanel) && config.sensePanelHold != .none && !mouse.panelHoldFired {
-            run(config.sensePanel, "sense panel tap")
+        for cid in up {
+            guard let press = mouse.presses.removeValue(forKey: cid) else { continue }
+            let mapped = actions(for: cid)
+            if config.verbose && mapped.hasDirections { log("\(Self.label(cid)) released: travel dx=\(press.dx) dy=\(press.dy)") }
+            if !mapped.firesOnPress && !press.fired { run(mapped.tap, "\(Self.label(cid)) tap") }
         }
     }
 
     private func gestureMoved(_ mouse: Mouse, dx: Int, dy: Int) {
-        guard mouse.pressed.contains(CID.gestureButton), !mouse.gestureFired else { return }
+        // Raw XY reports don't say which button is held; give them to the one with swipe actions.
+        guard let held = mouse.presses.first(where: { actions(for: $0.key).hasDirections }), !held.value.fired else { return }
+        let (cid, press) = (held.key, held.value)
         // The first raw XY report after a press holds a large value that isn't movement while
         // held (it follows pointer movement between presses), so drop it.
-        if mouse.skipNextMove {
-            mouse.skipNextMove = false
+        if press.skipNextMove {
+            press.skipNextMove = false
             return
         }
-        mouse.dx += dx
-        mouse.dy += dy
+        press.dx += dx
+        press.dy += dy
         let threshold = config.gestureThreshold
-        guard abs(mouse.dx) >= threshold || abs(mouse.dy) >= threshold else { return }
-        mouse.gestureFired = true
-        if abs(mouse.dx) > abs(mouse.dy) {
-            mouse.dx < 0 ? run(config.gestureLeft, "gesture left") : run(config.gestureRight, "gesture right")
-        } else {
-            mouse.dy < 0 ? run(config.gestureUp, "gesture up") : run(config.gestureDown, "gesture down")
+        guard abs(press.dx) >= threshold || abs(press.dy) >= threshold else { return }
+        let mapped = actions(for: cid)
+        let (action, direction): (Action, String) = abs(press.dx) > abs(press.dy)
+            ? (press.dx < 0 ? (mapped.left, "left") : (mapped.right, "right"))
+            : (press.dy < 0 ? (mapped.up, "up") : (mapped.down, "down"))
+        press.fired = true
+        guard action != .none else { return }
+        if let waveform = config.hapticFeedback, let hapticIndex = mouse.hapticIndex {
+            mouse.device.playHaptic(waveform, featureIndex: hapticIndex)
         }
+        run(action, "\(Self.label(cid)) \(direction)")
     }
 
     private func run(_ action: Action, _ trigger: String) {
