@@ -62,6 +62,7 @@ Optional. Create `~/.config/mx4d/config.json` (every key is optional) and run `m
   "gestureThreshold": 100,
   "gestureStep": 200,
   "hapticFeedback": "none",
+  "hapticLevel": 60,
   "verbose": false
 }
 ```
@@ -82,7 +83,7 @@ To move Space switching from the gesture button to the Sense Panel:
 
 A Space swipe keeps going while you hold the button: after the first switch, each further `gestureStep` sensor counts of travel (default: twice `gestureThreshold`) moves one more Space, and moving back goes back.
 
-`hapticFeedback` makes the MX Master 4 play a haptic waveform each time a swipe fires, including each repeated Space switch: `sharpStateChange`, `dampStateChange`, `sharpCollision`, `dampCollision`, `subtleCollision`, `happyAlert`, `angryAlert`, `completed`, `square`, `wave`, `firework`, `mad`, `knock`, `jingle`, `ringing` or `whisperCollision`. Run `build/MX4Driver.app/Contents/MacOS/mx4d --haptic knock` to feel a waveform before you choose it. The strength comes from the mouse's own haptic level setting.
+`hapticFeedback` makes the MX Master 4 play a haptic waveform each time a swipe fires, including each repeated Space switch: `sharpStateChange`, `dampStateChange`, `sharpCollision`, `dampCollision`, `subtleCollision`, `happyAlert`, `angryAlert`, `completed`, `square`, `wave`, `firework`, `mad`, `knock`, `jingle`, `ringing` or `whisperCollision`. Run `build/MX4Driver.app/Contents/MacOS/mx4d --haptic knock` to feel a waveform before you choose it. The strength comes from the mouse's haptic level. `hapticLevel` (0–100, 0 = off) sets it each time the mouse connects. It also controls the Sense Panel's own press and release clicks, which the firmware plays itself and which can't be turned off separately. Leave it out to keep the mouse's current level (60 by default).
 
 Set every direction and the hold to `none` to make the gesture button act on press instead of release (the pointer then keeps moving while it's held). Set every gesture button action to `none` to leave the button to macOS as mouse button 6, so other apps can bind it. `gestureThreshold` is how far (in sensor counts) you have to move while holding the button before it counts as a swipe; a normal click moves 0–10.
 

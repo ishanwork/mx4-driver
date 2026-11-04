@@ -259,6 +259,18 @@ final class HIDPPDevice {
         return (HapticWaveform.allCases.filter { mask & (1 << $0.rawValue) != 0 }, cfg[0] & 0x01 == 0 ? 0 : Int(cfg[1]))
     }
 
+    /// Sets the haptic strength (0-100, 0 = off), keeping the other config flags as they are.
+    @discardableResult
+    func setHapticLevel(_ level: Int) -> Bool {
+        guard case let .success(cfg) = call(HIDPP.featureHaptics, function: 1) else { return false }
+        let enabled = level > 0
+        let flags = (cfg[0] & ~0x01) | (enabled ? 0x01 : 0)
+        // Solaar sends level 50 with the enable bit cleared to turn haptics off.
+        let value = UInt8(enabled ? min(level, 100) : 50)
+        if case .success = call(HIDPP.featureHaptics, function: 2, params: [flags, value]) { return true }
+        return false
+    }
+
     /// Plays a waveform without waiting for the reply, so it never delays the action it accompanies.
     func playHaptic(_ waveform: HapticWaveform, featureIndex: UInt8) {
         transport.send([HIDPP.longReport, index, featureIndex, 0x40, waveform.rawValue])

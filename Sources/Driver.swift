@@ -151,11 +151,15 @@ final class Driver {
             let rawXY = mapped.hasDirections && control.supportsRawXY
             if device.divert(cid, rawXY: rawXY) { diverted.append(cid) }
         }
+        let hapticIndex = device.featureIndex(HIDPP.featureHaptics)
+        if let level = config.hapticLevel, hapticIndex != nil, !device.setHapticLevel(level) {
+            log("Could not set haptic level on device \(index)")
+        }
         guard !diverted.isEmpty else { return }
         let name = device.name ?? "device \(index)"
         let mouse = Mouse(device: device, name: name, reprogIndex: reprogIndex,
                           wirelessStatusIndex: device.featureIndex(HIDPP.featureWirelessStatus),
-                          hapticIndex: config.hapticFeedback == nil ? nil : device.featureIndex(HIDPP.featureHaptics),
+                          hapticIndex: hapticIndex,
                           diverted: diverted)
         mice[key, default: [:]][index] = mouse
         log("Configured \(name) (slot \(index)): diverted " + diverted.map { String(format: "0x%04X", $0) }.joined(separator: ", "))

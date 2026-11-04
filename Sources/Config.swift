@@ -28,6 +28,9 @@ struct Config {
     var gestureStep = 200
     /// Haptic waveform the mouse plays when a swipe fires (MX Master 4 only), or nil for none.
     var hapticFeedback: HapticWaveform?
+    /// MX Master 4 haptic strength (0-100, 0 = off) to apply on connect, or nil to leave the mouse's setting.
+    /// This also sets how strong the Sense Panel's own press and release clicks are.
+    var hapticLevel: Int?
     var verbose = false
 
     static var path: URL {
@@ -79,6 +82,7 @@ struct Config {
                 log("Unknown hapticFeedback \"\(name)\" in config; try one of " + HapticWaveform.allCases.map(\.name).joined(separator: ", "))
             }
         }
+        if let value = json["hapticLevel"] as? Int { config.hapticLevel = max(0, min(100, value)) }
         if let value = json["verbose"] as? Bool { config.verbose = value }
         return config
     }
