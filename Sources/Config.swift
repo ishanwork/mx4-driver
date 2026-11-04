@@ -24,6 +24,8 @@ struct Config {
     var sensePanel = ButtonActions()
     /// Pointer travel (device counts) while holding a button before it counts as a swipe.
     var gestureThreshold = 100
+    /// Further travel that repeats a Space swipe while the button stays held (default: 2x threshold).
+    var gestureStep = 200
     /// Haptic waveform the mouse plays when a swipe fires (MX Master 4 only), or nil for none.
     var hapticFeedback: HapticWaveform?
     var verbose = false
@@ -69,6 +71,7 @@ struct Config {
         config.gestureButton = buttonActions(json["gestureButton"], config.gestureButton)
         config.sensePanel = buttonActions(json["sensePanel"], config.sensePanel)
         if let value = json["gestureThreshold"] as? Int { config.gestureThreshold = value }
+        config.gestureStep = max(1, (json["gestureStep"] as? Int) ?? config.gestureThreshold * 2)
         if let name = json["hapticFeedback"] as? String, name != "none" {
             if let waveform = HapticWaveform(name: name) {
                 config.hapticFeedback = waveform

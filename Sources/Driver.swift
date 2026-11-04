@@ -28,8 +28,12 @@ final class Driver {
         var dx = 0
         var dy = 0
         var fired = false // a hold or swipe action fired, so release does nothing
+        var tracking = true // still turning movement into swipes
+        var repeatAxis: Axis? // set once a repeatable swipe fired; further travel repeats it
         var skipNextMove = true
     }
+
+    enum Axis { case horizontal, vertical }
 
     /// A configured mouse and its button state.
     final class Mouse {
@@ -232,6 +236,7 @@ final class Driver {
                 DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdDelay) { [weak self, weak mouse] in
                     guard let self, let mouse, mouse.presses[cid] === press, !press.fired else { return }
                     press.fired = true
+                    press.tracking = false
                     self.run(mapped.hold, "\(Self.label(cid)) hold")
                 }
             }
@@ -246,7 +251,7 @@ final class Driver {
 
     private func gestureMoved(_ mouse: Mouse, dx: Int, dy: Int) {
         // Raw XY reports don't say which button is held; give them to the one with swipe actions.
-        guard let held = mouse.presses.first(where: { actions(for: $0.key).hasDirections }), !held.value.fired else { return }
+        guard let held = mouse.presses.first(where: { actions(for: $0.key).hasDirections }), held.value.tracking else { return }
         let (cid, press) = (held.key, held.value)
         // The first raw XY report after a press holds a large value that isn't movement while
         // held (it follows pointer movement between presses), so drop it.
@@ -254,20 +259,51 @@ final class Driver {
             press.skipNextMove = false
             return
         }
-        press.dx += dx
-        press.dy += dy
-        let threshold = config.gestureThreshold
-        guard abs(press.dx) >= threshold || abs(press.dy) >= threshold else { return }
         let mapped = actions(for: cid)
-        let (action, direction): (Action, String) = abs(press.dx) > abs(press.dy)
-            ? (press.dx < 0 ? (mapped.left, "left") : (mapped.right, "right"))
-            : (press.dy < 0 ? (mapped.up, "up") : (mapped.down, "down"))
-        press.fired = true
-        guard action != .none else { return }
+        switch press.repeatAxis {
+        case nil:
+            press.dx += dx
+            press.dy += dy
+            let threshold = config.gestureThreshold
+            guard abs(press.dx) >= threshold || abs(press.dy) >= threshold else { return }
+            let axis: Axis = abs(press.dx) > abs(press.dy) ? .horizontal : .vertical
+            let action = swipe(mapped, cid: cid, mouse: mouse, axis: axis, sign: axis == .horizontal ? press.dx : press.dy)
+            press.fired = true
+            if action.repeatsWhileHeld {
+                // Keep going: each further `gestureStep` of travel along this axis repeats the swipe
+                // (moving back reverses it), so one long swipe can cross several Spaces.
+                press.repeatAxis = axis
+                press.dx = 0
+                press.dy = 0
+            } else {
+                press.tracking = false
+            }
+        case .horizontal?, .vertical?:
+            let axis = press.repeatAxis!
+            press.dx += axis == .horizontal ? dx : 0
+            press.dy += axis == .vertical ? dy : 0
+            let step = config.gestureStep
+            while abs(axis == .horizontal ? press.dx : press.dy) >= step {
+                let travel = axis == .horizontal ? press.dx : press.dy
+                swipe(mapped, cid: cid, mouse: mouse, axis: axis, sign: travel)
+                let consumed = travel < 0 ? -step : step
+                if axis == .horizontal { press.dx -= consumed } else { press.dy -= consumed }
+            }
+        }
+    }
+
+    /// Fires the swipe action for a direction, with haptic feedback, and returns it.
+    @discardableResult
+    private func swipe(_ mapped: ButtonActions, cid: UInt16, mouse: Mouse, axis: Axis, sign: Int) -> Action {
+        let (action, direction): (Action, String) = axis == .horizontal
+            ? (sign < 0 ? (mapped.left, "left") : (mapped.right, "right"))
+            : (sign < 0 ? (mapped.up, "up") : (mapped.down, "down"))
+        guard action != .none else { return action }
         if let waveform = config.hapticFeedback, let hapticIndex = mouse.hapticIndex {
             mouse.device.playHaptic(waveform, featureIndex: hapticIndex)
         }
         run(action, "\(Self.label(cid)) \(direction)")
+        return action
     }
 
     private func run(_ action: Action, _ trigger: String) {

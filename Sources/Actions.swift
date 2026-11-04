@@ -52,6 +52,9 @@ enum Action: Equatable, CustomStringConvertible {
         }
     }
 
+    /// Swipes for these keep repeating while the button stays held (one per `gestureStep` of travel).
+    var repeatsWhileHeld: Bool { self == .spaceLeft || self == .spaceRight }
+
     func perform() {
         switch self {
         case .none: break
