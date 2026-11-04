@@ -135,10 +135,15 @@ final class Driver {
         let controls = Dictionary(device.controls().map { ($0.cid, $0) }, uniquingKeysWith: { a, _ in a })
         if controls[CID.gestureButton] != nil { gestureSlots[key, default: []].insert(index) }
         var diverted: [UInt16] = []
-        // The gesture button is always diverted so we can recover its click even when unmapped.
         for cid in [CID.gestureButton, CID.sensePanel] {
             let mapped = actions(for: cid)
-            guard cid == CID.gestureButton || mapped.isMapped, let control = controls[cid], control.isDivertable else { continue }
+            guard let control = controls[cid], control.isDivertable else { continue }
+            guard mapped.isMapped else {
+                // Leave unmapped buttons native (the gesture button is then mouse button 6) so other
+                // apps can use them; also clear a diversion left over from an earlier run.
+                device.undivert(cid)
+                continue
+            }
             let rawXY = mapped.hasDirections && control.supportsRawXY
             if device.divert(cid, rawXY: rawXY) { diverted.append(cid) }
         }
@@ -168,7 +173,8 @@ final class Driver {
     /// The gesture button arrived as plain mouse button 6, so a mouse lost its diversion without
     /// telling us (power cycle, deep sleep). Do the click action now and re-divert in the background.
     func nativeGestureButtonPressed() -> Bool {
-        guard !transports.isEmpty else { return false }
+        // Unmapped, the button is meant to stay native: let the click through.
+        guard config.gestureButton.isMapped, !transports.isEmpty else { return false }
         run(config.gestureButton.tap, "gesture tap (button not diverted)")
         guard !recoveryPending else { return true }
         recoveryPending = true
